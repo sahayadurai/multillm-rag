@@ -1,14 +1,23 @@
 # MultiLLM RAG Chatbot
 
-## What Is This?
+**Submitted to:**
+- Professor. Roberto Pietrantuono
 
-A smart chatbot that lets you upload any file (PDF, text, documents, etc.) and ask questions about it. The unique feature: **it asks multiple AI models the same question at the same time** and shows you all their answers side-by-side so you can compare and pick the best one.
+**Submitted by:**
+- Mohammed Zain Shaikh, 
+- Sahaya Muthukani Gnanadurai
+- Nimra Jabeen
+
+
+## Introduction
+
+It is a smart chatbot that lets you upload any file (PDF, text, documents, etc.) and ask questions about it. The unique feature: **it asks multiple AI models the same question at the same time** and shows you all their answers side-by-side so you can compare and pick the best one.
 
 You can rate each answer with a score or thumbs up/down to help track which AI models give you the best results.
 
 ---
 
-## How It Works
+## Workflow
 
 ```
 Your File → Read & Index → Your Question → Query Multiple AIs → Compare Answers → You Rate & Rank

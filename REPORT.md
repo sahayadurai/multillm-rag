@@ -1,11 +1,11 @@
 # MultiLLM RAG Chatbot
 
 **Submitted to:**
-- Professor. Roberto Pietrantuono
+- Professor Roberto Pietrantuono
 
 **Submitted by:**
 - Mohammed Zain Shaikh, 
-- Sahaya Muthukani Gnanadurai
+- Sahaya Muthukani Gnanadurai,
 - Nimra Jabeen
 
 **Github link:**
@@ -23,18 +23,18 @@ You can rate each answer with a score or thumbs up/down to help track which AI m
 ## Workflow
 
 ```
-Your File → Read & Index → Your Question → Query Multiple AIs → Compare Answers → You Rate & Rank
+Upload File → Read & Index → Ask Question → Query Multiple AIs → Compare Answers → Rate & Rank
 ```
 
 ### Step by Step
 
 **1. Upload Your File**
-- Click upload and choose any file (PDF, Word, text, images, etc.)
+- Click Upload and choose any file (PDF, Word, text, images, etc.)
 - System reads and indexes the content
 - Creates a searchable database
 
 **2. Ask a Question**
-- Type your question in the chatbox
+- Type question in the chatbox
 - Choose how many AI models to ask (2-6 models)
 
 **3. Get Multiple Answers**
@@ -43,13 +43,13 @@ Your File → Read & Index → Your Question → Query Multiple AIs → Compare 
 - Automatic evaluation metrics shown (BLEU, ROUGE, Faithfulness, etc.)
 
 **4. Compare & Rate**
-- Read all answers side-by-side
+- You read all answers side-by-side
 - See which parts of your file each AI found
 - Use the **rating slider** or **thumbs up/down** to score each answer
 - Track which AI models perform best for your use case
 
 **5. Save Scores**
-- Your ratings are saved
+- The ratings are saved
 - System learns which models work best for you
 - View rating history anytime
 
@@ -82,12 +82,12 @@ These metrics are calculated automatically to help you evaluate answers:
 |--------|---------|
 | **BLEU** | How many words match between answers (0-1) |
 | **ROUGE** | How similar the answers are in structure (0-1) |
-| **Faithfulness** | Does the answer match your uploaded file content? (0-1) |
+| **Faithfulness** | Does the answer match the uploaded file content? (0-1) |
 | **Answer Relevancy** | Does the answer address your question? (0-1) |
 | **Context Precision** | Are retrieved file sections relevant? (0-1) |
 | **Context Recall** | Were all important file sections found? (0-1) |
 
-**Your Human Rating:** You can override these metrics with your own scoring (1-10 or thumbs up/down).
+**Human Rating:** You can override these metrics with your own scoring (1-10 or thumbs up/down).
 
 ---
 
@@ -135,7 +135,7 @@ MultiLLM-RAG-Chatbot/
 │       └── js/app.js
 │
 ├── data/                         # Files & databases
-│   ├── uploads/                  # Your uploaded files
+│   ├── uploads/                  # Uploaded files
 │   ├── indices/                  # Search indexes
 │   └── chats/                    # Chat history
 │
@@ -151,8 +151,7 @@ cd /path/to/MultiLLM-RAG-Chatbot
 chmod +x run.sh
 ./run.sh
 ```
-
-Done! Open your browser to: **http://localhost:8000**
+Access the link locally: **http://localhost:8000**
 
 The `run.sh` script handles:
 - Python setup
@@ -185,10 +184,10 @@ Each AI model's answer appears in a separate card with:
 
 ## What Data Gets Saved
 
-- Your uploaded files (stored locally, not sent anywhere)
-- Your questions and chat history
+- uploaded files (stored locally, not sent anywhere)
+- questions and chat history
 - All AI responses
-- Your human ratings/scores
+- human ratings/scores
 - Timestamps for analysis
 
 All data is stored in a local PostgreSQL database on your computer.
@@ -223,11 +222,11 @@ All data is stored in a local PostgreSQL database on your computer.
 
 Traditional chatbots show you one answer. This system shows you **all answers at once** so you can:
 
-✓ Compare directly (faster decision making)
-✓ Rate based on your needs (human judgment)
-✓ Track model performance over time (data-driven)
-✓ Find the best model for your use case (personalized)
-✓ Understand AI differences (educational)
+- Compare directly (faster decision making)
+- Rate based on your needs (human judgment)
+- Track model performance over time (data-driven)
+- Find the best model for your use case (personalized)
+- Understand AI differences (educational)
 
 ---
 
@@ -282,9 +281,9 @@ graph TD
 
 ### Example 1: Simple Thumbs
 ```
-Claude Sonnet 4:  "The answer is..." ⬆️ (Thumbs up)
-GPT-4o:          "The answer is..." ⬇️ (Thumbs down)
-Llama 3.3:       "The answer is..." ⬆️⬆️ (You liked this more)
+Claude Sonnet 4:  "The answer is..." (Thumbs up)
+GPT-4o:          "The answer is..." (Thumbs down)
+Llama 3.3:       "The answer is..." (You liked this more)
 ```
 
 ### Example 2: Numeric Score
@@ -329,18 +328,3 @@ Llama 3.3:      7/10 - Good balance
 - **Deployment**: Docker (run anywhere)
 
 ---
-
-## Next Steps
-
-1. **Run the chatbot**: `./run.sh`
-2. **Upload a file** of any type
-3. **Ask a question** you want answered
-4. **Compare answers** from multiple AI models
-5. **Rate the answers** using the slider or thumbs
-6. **Track performance** over time
-
----
-
-*MultiLLM RAG Chatbot - Compare AI outputs, rate what works best for you.*
-
-**Version**: 2.0.0 | **Type**: Multi-Model Comparison Chatbot | **Status**: Ready to Use

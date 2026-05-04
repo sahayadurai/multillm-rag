@@ -1,4 +1,4 @@
-"""FastAPI application — RAG Benchmark PDF Data Extractor."""
+"""FastAPI application — MultiLLM RAG Chatbot."""
 from __future__ import annotations
 import json, uuid, shutil, time
 from datetime import datetime
@@ -15,15 +15,14 @@ from app.config import (
     UPLOAD_DIR, INDEX_DIR, RESULTS_DIR, CHAT_DIR,
     AVAILABLE_MODELS, HOST, PORT, OPENROUTER_API_KEY,
 )
-from app.database import init_db, get_db, Session, UploadedFile as DBUploadedFile, ChatMessage, GroundTruth, Benchmark
-from app.pdf_processor import (
-    extract_text_chunks, extract_images, extract_tables, extract_ground_truth,
+from app.database import init_db, get_db, Session, UploadedFile as DBUploadedFile, ChatMessage, Rating
+from app.file_processor import (
+    extract_text_chunks, extract_images, extract_tables,
 )
 from app.embeddings import build_index, query_index
 from app.llm_client import chat_completion
-from app.benchmarks import run_full_benchmark
 
-app = FastAPI(title="RAG Benchmark PDF Data Extractor", version="1.0.0")
+app = FastAPI(title="MultiLLM RAG Chatbot", version="2.0.0")
 
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
@@ -106,7 +105,7 @@ async def get_session(session_id: str, db: DBSession = Depends(get_db)):
 
 
 @app.post("/api/upload")
-async def upload_pdfs(
+async def upload_files(
     files: list[UploadFile] = File(...),
     text_chunk_size: int = Form(512),
     text_chunk_overlap: int = Form(64),
@@ -114,12 +113,12 @@ async def upload_pdfs(
     session_id: Optional[str] = Form(None),
     db: DBSession = Depends(get_db),
 ):
-    """Upload PDFs, extract text/images/tables, build FAISS indices."""
+    """Upload files (PDF, DOCX, TXT, etc.), extract text, build FAISS indices."""
     sid, session = _get_or_create_session_db(session_id, db)
 
     results = []
     for upload in files:
-        if not upload.filename.lower().endswith(".pdf"):
+        if not upload.filename:
             continue
 
         # Save file
@@ -129,14 +128,11 @@ async def upload_pdfs(
         
         file_size = dest.stat().st_size
 
-        # Extract
+        # Extract text, images, tables
         text_chunks = extract_text_chunks(dest, text_chunk_size, text_chunk_overlap)
         image_chunks = extract_images(dest)
         table_chunks = extract_tables(dest)
         all_chunks = text_chunks + table_chunks + image_chunks
-
-        # Ground truth
-        gt = extract_ground_truth(dest)
 
         # Build index
         idx_info = build_index(all_chunks, upload.filename)
@@ -151,7 +147,7 @@ async def upload_pdfs(
             text_chunks_count=len(text_chunks),
             image_chunks_count=len(image_chunks),
             table_chunks_count=len(table_chunks),
-            ground_truth_count=len(gt),
+            ground_truth_count=0,  # No more ground truth extraction
             text_chunk_size=text_chunk_size,
             text_chunk_overlap=text_chunk_overlap,
             image_chunk_size=image_chunk_size,
@@ -160,19 +156,6 @@ async def upload_pdfs(
             index_status="indexed" if idx_info.get("index_path") else "error",
         )
         db.add(file_record)
-        db.flush()
-
-        # Store ground truth records
-        for gt_item in gt:
-            gt_record = GroundTruth(
-                id=str(uuid.uuid4()),
-                file_id=file_record.id,
-                question=gt_item.get("question", ""),
-                answer=gt_item.get("answer", ""),
-                extraction_method=gt_item.get("method", "unknown"),
-            )
-            db.add(gt_record)
-
         db.commit()
 
         results.append({
@@ -181,7 +164,6 @@ async def upload_pdfs(
             "image_chunks": len(image_chunks),
             "table_chunks": len(table_chunks),
             "total_chunks": len(all_chunks),
-            "ground_truth_pairs": len(gt),
             **idx_info,
         })
 
@@ -196,7 +178,6 @@ async def query_rag(
     top_k: int = Form(5),
     cosine_threshold: float = Form(0.0),
     temperature: float = Form(0.3),
-    run_benchmark: bool = Form(False),
     db: DBSession = Depends(get_db),
 ):
     """Query the RAG pipeline with selected models."""
@@ -212,15 +193,15 @@ async def query_rag(
     if not session:
         raise HTTPException(404, "Session not found")
     if not session.files:
-        raise HTTPException(400, "No PDFs indexed in this session")
+        raise HTTPException(400, "No files indexed in this session")
 
     model_ids = [m.strip() for m in models.split(",") if m.strip()]
 
-    # Retrieve from all indexed PDFs
+    # Retrieve from all indexed files
     all_retrieved: list[dict] = []
-    for pdf_file in session.files:
+    for file_record in session.files:
         try:
-            chunks = query_index(query, pdf_file.filename, top_k, cosine_threshold)
+            chunks = query_index(query, file_record.filename, top_k, cosine_threshold)
             all_retrieved.extend(chunks)
         except FileNotFoundError:
             continue
@@ -239,14 +220,12 @@ async def query_rag(
     context_str = "\n\n---\n\n".join(context_parts)
 
     system_prompt = (
-        "You are a precise academic research assistant. Answer the question "
-        "based ONLY on the provided context. Cite the source file and page "
-        "number for each claim. If the context does not contain the answer, "
-        "say so explicitly.\n\n"
+        "You are a helpful assistant. Answer the question "
+        "based on the provided context. Be concise and accurate.\n\n"
         f"Context:\n{context_str}"
     )
 
-    # Query each model
+    # Query each model simultaneously
     model_results = []
     for model_id in model_ids:
         try:
@@ -272,24 +251,6 @@ async def query_rag(
                 "context_used": context_str,
             }
 
-            # Benchmark if requested
-            if run_benchmark:
-                # Find best matching ground truth
-                all_gt = []
-                for pdf_file in session.files:
-                    all_gt.extend(pdf_file.ground_truths)
-                reference = _find_best_reference(query, [{"question": gt.question, "answer": gt.answer} for gt in all_gt])
-                if reference:
-                    bench = run_full_benchmark(
-                        query, llm_resp["content"],
-                        reference, top_chunks,
-                    )
-                    result_entry["benchmark"] = bench
-                    result_entry["reference_answer"] = reference
-                else:
-                    result_entry["benchmark"] = None
-                    result_entry["reference_answer"] = None
-
             model_results.append(result_entry)
         except Exception as e:
             model_results.append({
@@ -307,7 +268,7 @@ async def query_rag(
         cosine_threshold=int(cosine_threshold * 100),  # Store as int*100
         model_ids=",".join(model_ids),
         responses=model_results,
-        run_benchmark=run_benchmark,
+        run_benchmark=False,
     )
     db.add(chat_entry)
     db.commit()
@@ -323,110 +284,56 @@ async def query_rag(
     }}
 
 
-@app.post("/api/benchmark")
-async def run_benchmark_endpoint(
-    session_id: str = Form(...),
-    model: str = Form(...),
-    top_k: int = Form(5),
-    cosine_threshold: float = Form(0.0),
-    temperature: float = Form(0.3),
-    max_questions: int = Form(10),
+
+@app.post("/api/rate")
+async def rate_response(
+    chat_id: str = Form(...),
+    model_id: str = Form(...),
+    score: int = Form(None),
+    rating_type: str = Form("score"),  # "thumbs_up", "thumbs_down", "score", "custom"
+    notes: str = Form(None),
     db: DBSession = Depends(get_db),
 ):
-    """Run full benchmark using extracted ground truths."""
-    if not OPENROUTER_API_KEY:
-        raise HTTPException(
-            400,
-            "OPENROUTER_API_KEY is not set. Please set it in your .env file "
-            "and restart the server."
+    """Save human rating for a model response."""
+    try:
+        chat = db.query(ChatMessage).filter(ChatMessage.id == chat_id).first()
+        if not chat:
+            raise HTTPException(404, "Chat not found")
+
+        rating = Rating(
+            id=str(uuid.uuid4()),
+            chat_message_id=chat_id,
+            model_id=model_id,
+            score=score,
+            rating_type=rating_type,
+            notes=notes,
         )
+        db.add(rating)
+        db.commit()
+
+        return {
+            "id": rating.id,
+            "model_id": rating.model_id,
+            "score": rating.score,
+            "rating_type": rating.rating_type,
+            "notes": rating.notes,
+            "timestamp": rating.timestamp.isoformat() if rating.timestamp else None,
+        }
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/ratings/{chat_id}")
+async def get_ratings(chat_id: str, db: DBSession = Depends(get_db)):
+    """Get all ratings for a chat."""
+    chat = db.query(ChatMessage).filter(ChatMessage.id == chat_id).first()
+    if not chat:
+        raise HTTPException(404, "Chat not found")
     
-    # Get session from DB
-    session = db.query(Session).filter(Session.id == session_id).first()
-    if not session:
-        raise HTTPException(404, "Session not found")
-
-    # Collect all ground truths from uploaded files
-    all_gt: list[dict] = []
-    for pdf_file in session.files:
-        for gt in pdf_file.ground_truths:
-            all_gt.append({
-                "question": gt.question,
-                "answer": gt.answer,
-            })
-
-    if not all_gt:
-        raise HTTPException(400, "No ground truth found in uploaded PDFs")
-
-    benchmark_results = []
-    for gt_item in all_gt[:max_questions]:
-        question = gt_item["question"]
-        reference = gt_item["answer"]
-
-        # Retrieve
-        all_retrieved: list[dict] = []
-        for pdf_file in session.files:
-            try:
-                chunks = query_index(question, pdf_file.filename, top_k, cosine_threshold)
-                all_retrieved.extend(chunks)
-            except FileNotFoundError:
-                continue
-        all_retrieved.sort(key=lambda x: x.get("score", 0), reverse=True)
-        top_chunks = all_retrieved[:top_k]
-
-        context_parts = []
-        for c in top_chunks:
-            context_parts.append(f"[{c['source']}, p.{c['page']}]\n{c['text']}")
-        context_str = "\n\n".join(context_parts)
-
-        try:
-            llm_resp = await chat_completion(
-                model=model,
-                messages=[
-                    {"role": "system", "content": f"Answer based on context:\n{context_str}"},
-                    {"role": "user", "content": question},
-                ],
-                temperature=temperature,
-            )
-            prediction = llm_resp["content"]
-            bench = run_full_benchmark(question, prediction, reference, top_chunks)
-            benchmark_results.append({
-                "question": question,
-                "reference": reference,
-                "prediction": prediction,
-                "benchmark": bench,
-                "latency_s": llm_resp["latency_s"],
-            })
-        except Exception as e:
-            benchmark_results.append({
-                "question": question,
-                "error": str(e),
-            })
-
-    # Aggregate
-    agg = _aggregate_benchmarks(benchmark_results)
-    
-    # Save to DB
-    benchmark_record = Benchmark(
-        id=str(uuid.uuid4()),
-        session_id=session_id,
-        model_id=model,
-        max_questions=max_questions,
-        top_k=top_k,
-        aggregate_metrics=agg,
-        detailed_results=benchmark_results,
-    )
-    db.add(benchmark_record)
-    db.commit()
-    
-    result = {
-        "session_id": session_id,
-        "model": model,
-        "num_questions": len(benchmark_results),
-        "aggregate": agg,
-        "details": benchmark_results,
+    return {
+        "chat_id": chat_id,
+        "ratings": [r.to_dict() for r in chat.ratings]
     }
-    return result
 
 
 @app.get("/api/chat_history/{session_id}")
@@ -439,44 +346,6 @@ async def chat_history(session_id: str, db: DBSession = Depends(get_db)):
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
-
-def _find_best_reference(query: str, ground_truths: list[dict]) -> Optional[str]:
-    q_tok = set(query.lower().split())
-    best, best_score = None, 0
-    for gt in ground_truths:
-        gt_tok = set(gt["question"].lower().split())
-        overlap = len(q_tok & gt_tok) / max(len(q_tok | gt_tok), 1)
-        if overlap > best_score:
-            best_score = overlap
-            best = gt["answer"]
-    return best if best_score > 0.2 else None
-
-
-def _aggregate_benchmarks(results: list[dict]) -> dict:
-    metrics = ["bleu", "faithfulness", "answer_relevancy",
-               "context_precision", "context_recall", "mrr", "hit_rate"]
-    agg = {}
-    valid = [r for r in results if "benchmark" in r and r["benchmark"]]
-    if not valid:
-        return {}
-    for m in metrics:
-        vals = [r["benchmark"].get(m, 0) for r in valid]
-        agg[m] = {
-            "mean": round(sum(vals) / len(vals), 4),
-            "min": round(min(vals), 4),
-            "max": round(max(vals), 4),
-        }
-    rouge_f1s = [r["benchmark"]["rouge_l"]["f1"] for r in valid
-                 if "rouge_l" in r["benchmark"]]
-    if rouge_f1s:
-        agg["rouge_l_f1"] = {
-            "mean": round(sum(rouge_f1s) / len(rouge_f1s), 4),
-            "min": round(min(rouge_f1s), 4),
-            "max": round(max(rouge_f1s), 4),
-        }
-    latencies = [r.get("latency_s", 0) for r in valid]
-    agg["avg_latency_s"] = round(sum(latencies) / max(len(latencies), 1), 2)
-    return agg
 
 
 if __name__ == "__main__":

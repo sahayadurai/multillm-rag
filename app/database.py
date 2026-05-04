@@ -132,6 +132,7 @@ class ChatMessage(Base):
 
     # Relationship
     session = relationship("Session", back_populates="chats")
+    ratings = relationship("Rating", back_populates="chat_message", cascade="all, delete-orphan")
 
     def to_dict(self):
         return {
@@ -174,6 +175,31 @@ class Benchmark(Base):
             "timestamp": self.timestamp.isoformat() if self.timestamp else None,
             "aggregate_metrics": self.aggregate_metrics,
             "detailed_results": self.detailed_results,
+        }
+
+
+class Rating(Base):
+    """Represents human feedback rating for model answers."""
+    __tablename__ = "ratings"
+
+    id = Column(String, primary_key=True, index=True)
+    chat_message_id = Column(String, ForeignKey("chat_messages.id"), index=True)
+    model_id = Column(String, index=True)
+    score = Column(Integer, nullable=True)  # 1-10 score
+    rating_type = Column(String, default="score")  # "thumbs_up", "thumbs_down", "score", "custom"
+    notes = Column(Text, nullable=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+
+    chat_message = relationship("ChatMessage", back_populates="ratings")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "model_id": self.model_id,
+            "score": self.score,
+            "rating_type": self.rating_type,
+            "notes": self.notes,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
         }
 
 

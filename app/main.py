@@ -4,9 +4,10 @@ import json, uuid, shutil, time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from collections import Counter
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Depends
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session as DBSession
@@ -26,6 +27,66 @@ app = FastAPI(title="MultiLLM RAG Chatbot", version="2.0.0")
 
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+
+# ── Benchmark calculation helpers ────────────────────────────────────────────
+def calculate_bleu(reference: str, candidate: str, n: int = 2) -> float:
+    """Calculate simplified BLEU score (n-gram overlap)."""
+    ref_tokens = reference.lower().split()
+    cand_tokens = candidate.lower().split()
+    if not cand_tokens or not ref_tokens:
+        return 0.0
+    overlap = sum((Counter(cand_tokens) & Counter(ref_tokens)).values())
+    return min(overlap / len(cand_tokens), 1.0)
+
+def calculate_rouge_l(reference: str, candidate: str) -> float:
+    """Calculate ROUGE-L score (longest common subsequence)."""
+    def lcs_length(s1: list, s2: list) -> int:
+        m, n = len(s1), len(s2)
+        dp = [[0] * (n + 1) for _ in range(m + 1)]
+        for i in range(1, m + 1):
+            for j in range(1, n + 1):
+                if s1[i - 1] == s2[j - 1]:
+                    dp[i][j] = dp[i - 1][j - 1] + 1
+                else:
+                    dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])
+        return dp[m][n]
+    
+    ref_tokens = reference.lower().split()
+    cand_tokens = candidate.lower().split()
+    if not cand_tokens or not ref_tokens:
+        return 0.0
+    lcs = lcs_length(ref_tokens, cand_tokens)
+    return lcs / max(len(ref_tokens), len(cand_tokens))
+
+def calculate_relative_scores(answers: list[str]) -> dict[str, list[float]]:
+    """Calculate relative benchmark scores using mutual consensus (each vs all others)."""
+    if not answers or len(answers) < 2:
+        return {"bleu": [0.0] * len(answers), "rouge": [0.0] * len(answers)}
+    
+    n = len(answers)
+    scores_bleu = []
+    scores_rouge = []
+    
+    # For each answer, compare it against every OTHER answer and average the scores
+    for i, candidate in enumerate(answers):
+        bleu_vals = []
+        rouge_vals = []
+        for j, reference in enumerate(answers):
+            if i == j:
+                continue
+            bleu_vals.append(calculate_bleu(reference, candidate))
+            rouge_vals.append(calculate_rouge_l(reference, candidate))
+        scores_bleu.append(sum(bleu_vals) / len(bleu_vals) if bleu_vals else 0.0)
+        scores_rouge.append(sum(rouge_vals) / len(rouge_vals) if rouge_vals else 0.0)
+    
+    # Normalize so scores are on a 0-1 scale relative to the best performer
+    max_bleu = max(scores_bleu) if scores_bleu else 1.0
+    max_rouge = max(scores_rouge) if scores_rouge else 1.0
+    
+    scores_bleu = [round(s / max_bleu, 3) if max_bleu > 0 else 0.0 for s in scores_bleu]
+    scores_rouge = [round(s / max_rouge, 3) if max_rouge > 0 else 0.0 for s in scores_rouge]
+    
+    return {"bleu": scores_bleu, "rouge": scores_rouge}
 
 # Initialize database on startup
 @app.on_event("startup")
@@ -90,13 +151,25 @@ async def list_sessions(db: DBSession = Depends(get_db)):
 
 @app.get("/api/session/{session_id}")
 async def get_session(session_id: str, db: DBSession = Depends(get_db)):
-    """Get session details."""
+    """Get session details including chat history."""
     session = db.query(Session).filter(Session.id == session_id).first()
     if not session:
         raise HTTPException(404, "Session not found")
+    
+    chats = []
+    for chat in session.chats:
+        chats.append({
+            "id": chat.id,
+            "query": chat.query,
+            "timestamp": chat.timestamp.isoformat() if chat.timestamp else None,
+            "models": chat.model_ids.split(",") if chat.model_ids else [],
+            "results": chat.responses,
+        })
+    
     return {
         "id": session.id,
         "files": [f.to_dict() for f in session.files],
+        "chats": chats,
         "chats_count": len(session.chats),
         "benchmarks_count": len(session.benchmarks),
         "created_at": session.created_at.isoformat() if session.created_at else None,
@@ -168,6 +241,18 @@ async def upload_files(
         })
 
     return {"session_id": sid, "results": results}
+
+
+@app.get("/download/{filename}")
+async def download_file(filename: str):
+    """Download uploaded file."""
+    try:
+        file_path = UPLOAD_DIR / filename
+        if not file_path.exists():
+            raise HTTPException(404, "File not found")
+        return FileResponse(file_path, filename=filename)
+    except Exception as e:
+        raise HTTPException(400, f"Download failed: {str(e)}")
 
 
 @app.post("/api/query")
@@ -258,6 +343,23 @@ async def query_rag(
                 "error": str(e),
             })
 
+    # Calculate benchmark scores (comparing all answers)
+    successful_answers = [r["answer"] for r in model_results if "answer" in r]
+    if len(successful_answers) >= 2:
+        benchmark_scores = calculate_relative_scores(successful_answers)
+        score_idx = 0
+        for result in model_results:
+            if "answer" in result:
+                result["benchmark"] = {
+                    "bleu": round(benchmark_scores["bleu"][score_idx], 3),
+                    "rouge": round(benchmark_scores["rouge"][score_idx], 3),
+                    "faithfulness": 0.0,  # Placeholder
+                    "answer_relevancy": 0.0,  # Placeholder
+                    "context_precision": 0.0,  # Placeholder
+                    "context_recall": 0.0,  # Placeholder
+                }
+                score_idx += 1
+
     # Save to chat history in DB
     chat_entry = ChatMessage(
         id=str(uuid.uuid4())[:8],
@@ -334,6 +436,31 @@ async def get_ratings(chat_id: str, db: DBSession = Depends(get_db)):
         "chat_id": chat_id,
         "ratings": [r.to_dict() for r in chat.ratings]
     }
+
+
+@app.delete("/api/chat/{chat_id}")
+async def delete_chat(chat_id: str, db: DBSession = Depends(get_db)):
+    """Delete a specific chat message."""
+    chat = db.query(ChatMessage).filter(ChatMessage.id == chat_id).first()
+    if not chat:
+        raise HTTPException(404, "Chat not found")
+    
+    db.delete(chat)
+    db.commit()
+    return {"status": "deleted"}
+
+
+@app.post("/api/session/{session_id}/delete_all_chats")
+async def delete_all_chats(session_id: str, db: DBSession = Depends(get_db)):
+    """Delete all chats in a session."""
+    session = db.query(Session).filter(Session.id == session_id).first()
+    if not session:
+        raise HTTPException(404, "Session not found")
+    
+    # Delete all chats in this session (cascade delete will handle ratings)
+    db.query(ChatMessage).filter(ChatMessage.session_id == session_id).delete()
+    db.commit()
+    return {"status": "all chats deleted"}
 
 
 @app.get("/api/chat_history/{session_id}")

@@ -10,16 +10,18 @@
 <!-- ── Sidebar ───────────────────────────────────────────────────────── -->
 <aside id="sidebar" class="sidebar">
   <div class="sidebar-header">
-    <h2>Sessions</h2>
-    <button id="newSessionBtn" class="btn btn-sm">+ New</button>
+    <span class="sidebar-title">History</span>
+    <button id="sidebarClose" class="btn-icon-small" title="Close sidebar">&#x2715;</button>
   </div>
-  <div id="sessionList" class="session-list"></div>
   <div class="sidebar-section">
     <h3>Uploaded Files</h3>
     <ul id="fileList" class="file-list"></ul>
   </div>
   <div class="sidebar-section">
-    <h3>Chat History</h3>
+    <div class="chat-header">
+      <h3>Chat History</h3>
+      <button id="deleteAllChatsBtn" class="btn-icon-small" title="Delete all chats">✕</button>
+    </div>
     <ul id="chatHistory" class="chat-list"></ul>
   </div>
 </aside>
@@ -31,25 +33,30 @@
     <h1>MultiLLM <span class="accent">RAG Chatbot</span></h1>
   </header>
 
+  <!-- New Chat Button -->
+  <div class="quick-actions">
+    <button id="newChatBtn" class="btn btn-primary">+ New Chat</button>
+  </div>
+
   <!-- Upload Section -->
   <section class="card" id="uploadSection">
     <h2>1 · Upload Files</h2>
     <div class="upload-area" id="dropZone">
-      <p>Drop files here (PDF, DOCX, TXT, etc.) or <label class="link" for="fileInput">browse</label></p>
-      <input type="file" id="fileInput" multiple hidden>
+      <p>Drop files here (PDF, DOCX, TXT, etc.) or <label class="link" id="browseLabel">browse</label></p>
     </div>
+    <input type="file" id="fileInput" multiple style="display:none;">
     <div class="param-grid">
       <div class="param">
-        <label>Text Chunk Size</label>
-        <input type="number" id="textChunkSize" value="512" min="64" max="4096">
+        <label title="Number of characters per text chunk. Larger = longer context, slower processing">Text Chunk Size</label>
+        <input type="number" id="textChunkSize" value="512" min="64" max="4096" title="Number of characters per text chunk. Larger values keep more context together.">
       </div>
       <div class="param">
-        <label>Text Overlap</label>
-        <input type="number" id="textOverlap" value="64" min="0" max="512">
+        <label title="Character overlap between chunks. Prevents losing context between splits">Text Overlap</label>
+        <input type="number" id="textOverlap" value="64" min="0" max="512" title="Overlapping characters between chunks to maintain continuity.">
       </div>
       <div class="param">
-        <label>Image Chunk Size</label>
-        <input type="number" id="imageChunkSize" value="256" min="64" max="2048">
+        <label title="Size of image processing regions">Image Chunk Size</label>
+        <input type="number" id="imageChunkSize" value="256" min="64" max="2048" title="Size of regions when processing images in documents.">
       </div>
     </div>
     <button id="uploadBtn" class="btn btn-primary" disabled>Upload &amp; Index</button>
@@ -75,23 +82,23 @@
 
     <div class="param-grid">
       <div class="param-with-slider">
-        <label>Top-K (Context Size)</label>
+        <label title="Number of most relevant context chunks to retrieve and use as reference">Top-K (Context Size)</label>
         <div class="input-slider-wrapper">
-          <input type="range" id="topKSlider" min="1" max="50" value="5" class="slider">
+          <input type="range" id="topKSlider" min="1" max="50" value="5" class="slider" title="How many relevant documents to include. More = richer context but slower.">
           <input type="number" id="topK" value="5" min="1" max="50" class="slider-value">
         </div>
       </div>
       <div class="param-with-slider">
-        <label>Cosine Threshold</label>
+        <label title="Minimum similarity score (0-1) for retrieved chunks. Higher = stricter relevance">Cosine Threshold (Relevance)</label>
         <div class="input-slider-wrapper">
-          <input type="range" id="cosineThresholdSlider" min="0" max="1" step="0.05" value="0.0" class="slider">
+          <input type="range" id="cosineThresholdSlider" min="0" max="1" step="0.05" value="0.0" class="slider" title="Minimum relevance threshold. 0.5+ keeps only very similar content.">
           <input type="number" id="cosineThreshold" value="0.0" min="0" max="1" step="0.05" class="slider-value">
         </div>
       </div>
       <div class="param-with-slider">
-        <label>Temperature (Creativity)</label>
+        <label title="Controls model creativity. 0 = deterministic, 1 = very random/creative">Temperature (Creativity)</label>
         <div class="input-slider-wrapper">
-          <input type="range" id="temperatureSlider" min="0" max="2" step="0.1" value="0.3" class="slider">
+          <input type="range" id="temperatureSlider" min="0" max="1" step="0.05" value="0.3" class="slider" title="0 = factual/consistent, 1 = creative/varied. 0.3-0.7 recommended for balanced output.">
           <input type="number" id="temperature" value="0.3" min="0" max="2" step="0.1" class="slider-value">
         </div>
       </div>
@@ -100,12 +107,23 @@
       <textarea id="queryInput" placeholder="Ask any question about your documents …" rows="3"></textarea>
       <button id="queryBtn" class="btn btn-primary" disabled>Compare Answers</button>
     </div>
+
+    <!-- Benchmark section -->
+    <div class="benchmark-section">
+      <label class="bench-toggle-label">
+        <input type="checkbox" id="runBenchmark"> Run Benchmark
+      </label>
+      <div id="groundTruthInput" style="display:none;">
+        <label class="gt-label">Paste the reference / ground-truth answer to score against:</label>
+        <textarea id="groundTruthText" rows="3" placeholder="Paste the ideal reference answer here…"></textarea>
+      </div>
+    </div>
   </section>
 
   <!-- Results Section -->
   <div id="resultsArea"></div>
 </main>
 
-<script src="/static/js/app.js?v=2"></script>
+<script src="/static/js/app.js?v=8"></script>
 </body>
 </html>

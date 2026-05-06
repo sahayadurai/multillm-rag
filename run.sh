@@ -189,4 +189,7 @@ echo -e "${YELLOW}Press Ctrl+C to stop the server${NC}"
 echo ""
 
 # Launch the FastAPI application
+CMD="python -m uvicorn app.main:app --host $(grep '^HOST=' .env | cut -d'=' -f2) --port $(grep '^PORT=' .env | cut -d'=' -f2) --reload"
+echo "Executing: $CMD"
+
 python -m uvicorn app.main:app --host $(grep '^HOST=' .env | cut -d'=' -f2) --port $(grep '^PORT=' .env | cut -d'=' -f2) --reload

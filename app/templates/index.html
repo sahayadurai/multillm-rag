@@ -11,7 +11,7 @@
 <aside id="sidebar" class="sidebar">
   <div class="sidebar-header">
     <span class="sidebar-title">History</span>
-    <button id="sidebarClose" class="btn-icon-small" title="Close sidebar">&#x2715;</button>
+    <button id="sidebarClose" class="btn-icon-small" title="Close sidebar">X</button>
   </div>
   <div class="sidebar-section">
     <h3>Uploaded Files</h3>
@@ -20,7 +20,7 @@
   <div class="sidebar-section">
     <div class="chat-header">
       <h3>Chat History</h3>
-      <button id="deleteAllChatsBtn" class="btn-icon-small" title="Delete all chats">✕</button>
+      <button id="deleteAllChatsBtn" class="btn-icon-small" title="Delete all chats">X</button>
     </div>
     <ul id="chatHistory" class="chat-list"></ul>
   </div>
@@ -29,7 +29,7 @@
 <!-- ── Main Content ──────────────────────────────────────────────────── -->
 <main class="main-content">
   <header class="top-bar">
-    <button id="sidebarToggle" class="btn btn-icon">☰</button>
+    <button id="sidebarToggle" class="btn btn-icon">Menu</button>
     <h1>MultiLLM <span class="accent">RAG Chatbot</span></h1>
   </header>
 
@@ -40,7 +40,7 @@
 
   <!-- Upload Section -->
   <section class="card" id="uploadSection">
-    <h2>1 · Upload Files</h2>
+    <h2>1 - Upload Files</h2>
     <div class="upload-area" id="dropZone">
       <p>Drop files here (PDF, DOCX, TXT, etc.) or <label class="link" id="browseLabel">browse</label></p>
     </div>
@@ -65,7 +65,7 @@
 
   <!-- Query Section -->
   <section class="card" id="querySection">
-    <h2>2 · Compare Multiple AI Models</h2>
+    <h2>2 - Compare Multiple AI Models</h2>
     <div class="param-grid">
       <div class="param span-2">
         <label>Select Models (pick 2-6)</label>
@@ -104,7 +104,7 @@
       </div>
     </div>
     <div class="query-row">
-      <textarea id="queryInput" placeholder="Ask any question about your documents …" rows="3"></textarea>
+      <textarea id="queryInput" placeholder="Ask any question about your documents..." rows="3"></textarea>
       <button id="queryBtn" class="btn btn-primary" disabled>Compare Answers</button>
     </div>
 
@@ -115,7 +115,7 @@
       </label>
       <div id="groundTruthInput" style="display:none;">
         <label class="gt-label">Paste the reference / ground-truth answer to score against:</label>
-        <textarea id="groundTruthText" rows="3" placeholder="Paste the ideal reference answer here…"></textarea>
+        <textarea id="groundTruthText" rows="3" placeholder="Paste the ideal reference answer here..."></textarea>
       </div>
     </div>
   </section>

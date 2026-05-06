@@ -16,7 +16,7 @@ from app.config import (
     UPLOAD_DIR, INDEX_DIR, RESULTS_DIR, CHAT_DIR,
     AVAILABLE_MODELS, HOST, PORT, OPENROUTER_API_KEY,
 )
-from app.database import init_db, get_db, Session, UploadedFile as DBUploadedFile, ChatMessage, Rating
+from app.database import init_db, get_db, Session, UploadedFile as DBUploadedFile, ChatMessage, Rating, engine
 from app.file_processor import (
     extract_text_chunks, extract_images, extract_tables,
 )
@@ -27,6 +27,76 @@ app = FastAPI(title="MultiLLM RAG Chatbot", version="2.0.0")
 
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+
+import math
+from sqlalchemy import inspect as sa_inspect, text as sql_text
+from app.database import Benchmark
+
+# ── Custom DB Explorer (/db) ─────────────────────────────────────────────────
+
+def _serialize_val(v):
+    if isinstance(v, datetime):
+        return v.isoformat()
+    return v
+
+
+@app.get("/db", response_class=HTMLResponse)
+async def db_explorer_page(request: Request):
+    return templates.TemplateResponse("db_explorer.html", {"request": request})
+
+
+@app.get("/db/api/tables")
+async def db_api_tables():
+    """Return all tables with their column schema and row counts."""
+    inspector = sa_inspect(engine)
+    table_names = sorted(inspector.get_table_names())
+    tables = []
+    with engine.connect() as conn:
+        for tname in table_names:
+            columns = [
+                {
+                    "name": c["name"],
+                    "type": str(c["type"]),
+                    "nullable": bool(c.get("nullable", True)),
+                    "primary_key": c["name"] in {
+                        pk for pk in inspector.get_pk_constraint(tname).get("constrained_columns", [])
+                    },
+                }
+                for c in inspector.get_columns(tname)
+            ]
+            row_count = conn.execute(
+                sql_text(f'SELECT COUNT(*) FROM "{tname}"')
+            ).scalar()
+            tables.append({"name": tname, "columns": columns, "row_count": row_count})
+    return JSONResponse({"tables": tables})
+
+
+@app.get("/db/api/table/{table_name}")
+async def db_api_table(table_name: str, page: int = 1, per_page: int = 20):
+    """Return paginated rows for a table."""
+    inspector = sa_inspect(engine)
+    if table_name not in inspector.get_table_names():
+        raise HTTPException(404, "Table not found")
+    offset = (page - 1) * per_page
+    with engine.connect() as conn:
+        total = conn.execute(
+            sql_text(f'SELECT COUNT(*) FROM "{table_name}"')
+        ).scalar()
+        result = conn.execute(
+            sql_text(f'SELECT * FROM "{table_name}" ORDER BY 1 LIMIT :lim OFFSET :off'),
+            {"lim": per_page, "off": offset},
+        )
+        cols = list(result.keys())
+        rows = [{c: _serialize_val(v) for c, v in zip(cols, row)} for row in result]
+    return JSONResponse({
+        "table": table_name,
+        "columns": cols,
+        "rows": rows,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": max(1, math.ceil(total / per_page)),
+    })
 
 # ── Benchmark calculation helpers ────────────────────────────────────────────
 def calculate_bleu(reference: str, candidate: str, n: int = 2) -> float:
@@ -161,6 +231,7 @@ async def get_session(session_id: str, db: DBSession = Depends(get_db)):
         chats.append({
             "id": chat.id,
             "query": chat.query,
+            "display_name": chat.display_name,
             "timestamp": chat.timestamp.isoformat() if chat.timestamp else None,
             "models": chat.model_ids.split(",") if chat.model_ids else [],
             "results": chat.responses,
@@ -263,6 +334,7 @@ async def query_rag(
     top_k: int = Form(5),
     cosine_threshold: float = Form(0.0),
     temperature: float = Form(0.3),
+    file_names: Optional[str] = Form(None),  # comma-separated; restrict query to these files
     db: DBSession = Depends(get_db),
 ):
     """Query the RAG pipeline with selected models."""
@@ -282,9 +354,17 @@ async def query_rag(
 
     model_ids = [m.strip() for m in models.split(",") if m.strip()]
 
-    # Retrieve from all indexed files
+    # Restrict to the files the user just uploaded (if specified)
+    files_to_query = session.files
+    if file_names:
+        requested = {n.strip() for n in file_names.split(",") if n.strip()}
+        filtered = [f for f in session.files if f.filename in requested]
+        if filtered:
+            files_to_query = filtered
+
+    # Retrieve from selected indexed files
     all_retrieved: list[dict] = []
-    for file_record in session.files:
+    for file_record in files_to_query:
         try:
             chunks = query_index(query, file_record.filename, top_k, cosine_threshold)
             all_retrieved.extend(chunks)
@@ -448,6 +528,17 @@ async def delete_chat(chat_id: str, db: DBSession = Depends(get_db)):
     db.delete(chat)
     db.commit()
     return {"status": "deleted"}
+
+
+@app.patch("/api/chat/{chat_id}/rename")
+async def rename_chat(chat_id: str, display_name: str = Form(...), db: DBSession = Depends(get_db)):
+    """Set a user-friendly display name for a chat entry."""
+    chat = db.query(ChatMessage).filter(ChatMessage.id == chat_id).first()
+    if not chat:
+        raise HTTPException(404, "Chat not found")
+    chat.display_name = display_name.strip() or None
+    db.commit()
+    return {"status": "ok", "display_name": chat.display_name}
 
 
 @app.post("/api/session/{session_id}/delete_all_chats")

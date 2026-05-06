@@ -114,6 +114,7 @@ class ChatMessage(Base):
     id = Column(String, primary_key=True, index=True)
     session_id = Column(String, ForeignKey("sessions.id"), index=True)
     query = Column(Text)
+    display_name = Column(String, nullable=True)  # user-editable label shown in sidebar
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
 
     # Query parameters
@@ -138,6 +139,7 @@ class ChatMessage(Base):
         return {
             "id": self.id,
             "query": self.query,
+            "display_name": self.display_name,
             "timestamp": self.timestamp.isoformat() if self.timestamp else None,
             "top_k": self.top_k,
             "temperature": self.temperature / 10.0,

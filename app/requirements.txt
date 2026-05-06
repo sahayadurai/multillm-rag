@@ -46,6 +46,8 @@ python-dotenv==1.0.1
 # ── Database ──────────────────────────────────────────────────────────────
 sqlalchemy==2.0.23
 psycopg2-binary==2.9.10
+# ── OCR (image text extraction from PDFs) ─────────────────────────────────
+pytesseract>=0.3.10
 # ── Transitive Dependencies (pinned for reproducibility) ───────────────────
 starlette>=0.40.0
 anyio>=3.0

@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DB Explorer</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: ui-monospace, "Cascadia Code", Consolas, "Liberation Mono", monospace;
+    font-size: 13px;
+    background: #0d1117;
+    color: #c9d1d9;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  a { color: #58a6ff; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ---- header ---- */
+  #header {
+    background: #161b22;
+    border-bottom: 1px solid #30363d;
+    padding: 9px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  #header h1 { font-size: 14px; font-weight: 600; color: #e6edf3; }
+  #header .badge {
+    background: #21262d;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 11px;
+    color: #8b949e;
+  }
+  #header .back-app {
+    margin-left: auto;
+    font-size: 12px;
+    color: #8b949e;
+  }
+  #header .back-app:hover { color: #58a6ff; }
+
+  /* ---- layout ---- */
+  #layout { display: flex; flex: 1; overflow: hidden; }
+
+  /* ---- sidebar ---- */
+  #sidebar {
+    width: 210px;
+    background: #161b22;
+    border-right: 1px solid #30363d;
+    overflow-y: auto;
+    flex-shrink: 0;
+    padding: 10px 0;
+  }
+  #sidebar h2 {
+    font-size: 10px;
+    font-weight: 600;
+    color: #8b949e;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    padding: 0 12px 6px;
+  }
+  .nav-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 12px;
+    cursor: pointer;
+    user-select: none;
+    border-left: 2px solid transparent;
+  }
+  .nav-item:hover { background: #21262d; }
+  .nav-item.active {
+    background: rgba(31, 111, 235, 0.1);
+    border-left-color: #1f6feb;
+  }
+  .nav-item .ni-name { color: #e6edf3; font-size: 12px; }
+  .nav-item .ni-count {
+    color: #8b949e;
+    font-size: 11px;
+    background: #21262d;
+    border-radius: 8px;
+    padding: 1px 6px;
+    min-width: 24px;
+    text-align: center;
+  }
+
+  /* ---- main ---- */
+  #main { flex: 1; overflow-y: auto; padding: 16px 20px; }
+
+  /* ---- overview ---- */
+  .page-title { font-size: 15px; font-weight: 600; color: #e6edf3; margin-bottom: 3px; }
+  .page-sub { color: #8b949e; font-size: 12px; margin-bottom: 16px; }
+
+  .overview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 12px;
+  }
+  .tcard {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .tcard-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 9px 14px;
+    background: #1c2128;
+    border-bottom: 1px solid #30363d;
+  }
+  .tcard-head .tc-name {
+    font-weight: 600;
+    color: #58a6ff;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .tcard-head .tc-name:hover { text-decoration: underline; }
+  .tcard-head .tc-rows { color: #8b949e; font-size: 12px; }
+
+  .schema-tbl { width: 100%; border-collapse: collapse; }
+  .schema-tbl th {
+    text-align: left;
+    padding: 5px 14px;
+    font-size: 10px;
+    color: #8b949e;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    border-bottom: 1px solid #21262d;
+  }
+  .schema-tbl td {
+    padding: 4px 14px;
+    font-size: 12px;
+    border-bottom: 1px solid #1c2128;
+  }
+  .schema-tbl tr:last-child td { border-bottom: none; }
+  .schema-tbl .sc-col   { color: #79c0ff; }
+  .schema-tbl .sc-type  { color: #d2a8ff; }
+  .schema-tbl .sc-null  { color: #8b949e; }
+  .schema-tbl .sc-pk    { color: #f0883e; font-size: 10px; font-weight: 600; }
+
+  /* ---- records view ---- */
+  .rec-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .rec-header .rh-back {
+    color: #8b949e;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 3px 8px;
+    background: #21262d;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+  }
+  .rec-header .rh-back:hover { color: #58a6ff; }
+  .rec-header .rh-title { font-size: 14px; font-weight: 600; color: #e6edf3; }
+  .rec-header .rh-count { font-size: 12px; color: #8b949e; }
+
+  .rec-wrap {
+    overflow-x: auto;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+  }
+  .rec-tbl { width: 100%; border-collapse: collapse; min-width: 500px; }
+  .rec-tbl thead th {
+    background: #1c2128;
+    padding: 8px 12px;
+    text-align: left;
+    font-size: 10px;
+    color: #8b949e;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    border-bottom: 1px solid #30363d;
+    white-space: nowrap;
+  }
+  .rec-tbl tbody tr {
+    border-bottom: 1px solid #21262d;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .rec-tbl tbody tr:last-child { border-bottom: none; }
+  .rec-tbl tbody tr:hover { background: #1c2128; }
+  .rec-tbl tbody tr.is-expanded { background: rgba(31,111,235,0.07); }
+  .rec-tbl tbody td {
+    padding: 7px 12px;
+    font-size: 12px;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #c9d1d9;
+    vertical-align: middle;
+  }
+  .rec-tbl td.td-id   { color: #79c0ff; }
+  .rec-tbl td.td-json { color: #8b949e; font-style: italic; }
+  .rec-tbl td.td-null { color: #484f58; }
+
+  /* ---- expanded detail row ---- */
+  tr.detail-row { cursor: default; }
+  tr.detail-row:hover { background: #0d1117 !important; }
+  tr.detail-row td { padding: 0; border-bottom: 1px solid #30363d; }
+  .detail-inner { padding: 14px 16px; background: #0d1117; }
+
+  .detail-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .df-cell {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    padding: 7px 10px;
+  }
+  .df-cell.df-wide { grid-column: 1 / -1; }
+  .df-key {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #8b949e;
+    letter-spacing: 0.4px;
+    margin-bottom: 4px;
+  }
+  .df-val {
+    font-size: 12px;
+    color: #e6edf3;
+    word-break: break-word;
+    white-space: pre-wrap;
+  }
+  .df-val.dv-null { color: #484f58; font-style: italic; }
+
+  /* ---- LLM responses ---- */
+  .resp-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #e6edf3;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #30363d;
+    margin-bottom: 10px;
+  }
+  .resp-block {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    overflow: hidden;
+  }
+  .resp-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 7px 12px;
+    background: #1c2128;
+    border-bottom: 1px solid #30363d;
+  }
+  .resp-model { font-weight: 600; color: #79c0ff; font-size: 12px; }
+  .resp-meta  { color: #8b949e; font-size: 11px; }
+  .resp-body  { padding: 10px 12px; }
+  .resp-answer {
+    font-size: 12px;
+    color: #c9d1d9;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .resp-error { font-size: 12px; color: #f85149; }
+  .section-lbl {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #8b949e;
+    letter-spacing: 0.4px;
+    margin-top: 8px;
+    margin-bottom: 4px;
+  }
+  .src-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+  .src-tag {
+    background: #21262d;
+    border: 1px solid #30363d;
+    border-radius: 3px;
+    padding: 2px 6px;
+    font-size: 11px;
+    color: #8b949e;
+  }
+  .bench-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .bench-badge {
+    background: #162118;
+    border: 1px solid #2d5a2d;
+    border-radius: 3px;
+    padding: 2px 6px;
+    font-size: 11px;
+    color: #3fb950;
+  }
+
+  /* ---- pagination ---- */
+  .pagination {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .pg-btn {
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: inherit;
+  }
+  .pg-btn:hover:not(:disabled) { background: #30363d; }
+  .pg-btn:disabled { opacity: 0.35; cursor: default; }
+  .pg-info { color: #8b949e; font-size: 12px; }
+
+  /* ---- status messages ---- */
+  .msg { padding: 32px; text-align: center; color: #8b949e; }
+  .msg-error { color: #f85149; }
+
+  /* ---- scrollbar ---- */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #484f58; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <h1>DB Explorer</h1>
+  <span class="badge">PostgreSQL</span>
+  <a href="/" class="back-app">Back to App</a>
+</div>
+
+<div id="layout">
+  <nav id="sidebar">
+    <h2>Tables</h2>
+    <div id="nav-list"><div class="msg">Loading...</div></div>
+  </nav>
+  <div id="main">
+    <div id="content"><div class="msg">Loading...</div></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  let allTables = [];
+  let currentTable = null;
+  let rowStore = [];   // rows for current page, indexed by position
+
+  // ---- helpers ----------------------------------------------------------------
+
+  function esc(s) {
+    const d = document.createElement("div");
+    d.textContent = (s == null ? "" : String(s));
+    return d.innerHTML;
+  }
+
+  function fmtCell(v, col) {
+    if (v == null) return '<span class="td-null">null</span>';
+    if (typeof v === "object") return '<em style="color:#8b949e">[JSON]</em>';
+    const s = String(v);
+    const display = s.length > 55 ? s.slice(0, 55) + "..." : s;
+    return esc(display);
+  }
+
+  function cellClass(v, colName) {
+    if (v == null) return "td-null";
+    if (colName === "id") return "td-id";
+    if (typeof v === "object") return "td-json";
+    return "";
+  }
+
+  function pgBtn(label, onclick, disabled) {
+    return `<button class="pg-btn" ${disabled ? "disabled" : ""} onclick="${esc(onclick)}">${label}</button>`;
+  }
+
+  // ---- nav sidebar ------------------------------------------------------------
+
+  function renderNav() {
+    const nav = document.getElementById("nav-list");
+    nav.innerHTML = allTables.map(t =>
+      `<div class="nav-item" id="nav-${esc(t.name)}" onclick="showTable('${esc(t.name)}',1)">
+         <span class="ni-name">${esc(t.name)}</span>
+         <span class="ni-count">${t.row_count}</span>
+       </div>`
+    ).join("");
+  }
+
+  function setActiveNav(name) {
+    document.querySelectorAll(".nav-item").forEach(el => {
+      el.classList.toggle("active", el.id === "nav-" + name);
+    });
+  }
+
+  // ---- overview ---------------------------------------------------------------
+
+  function showOverview() {
+    currentTable = null;
+    document.querySelectorAll(".nav-item").forEach(el => el.classList.remove("active"));
+
+    const cards = allTables.map(t => {
+      const colRows = t.columns.map(c =>
+        `<tr>
+           <td class="sc-col">${esc(c.name)}</td>
+           <td class="sc-type">${esc(c.type)}</td>
+           <td class="sc-null">${c.nullable ? "yes" : "no"}</td>
+           <td class="sc-pk">${c.primary_key ? "PK" : ""}</td>
+         </tr>`
+      ).join("");
+
+      return `
+        <div class="tcard">
+          <div class="tcard-head">
+            <span class="tc-name" onclick="showTable('${esc(t.name)}',1)">${esc(t.name)}</span>
+            <span class="tc-rows">${t.row_count} row${t.row_count !== 1 ? "s" : ""}</span>
+          </div>
+          <table class="schema-tbl">
+            <thead>
+              <tr><th>Column</th><th>Type</th><th>Nullable</th><th>Key</th></tr>
+            </thead>
+            <tbody>${colRows}</tbody>
+          </table>
+        </div>`;
+    }).join("");
+
+    document.getElementById("content").innerHTML = `
+      <div class="page-title">Database Overview</div>
+      <div class="page-sub">${allTables.length} table${allTables.length !== 1 ? "s" : ""} &mdash; click a table name to browse records</div>
+      <div class="overview-grid">${cards}</div>`;
+  }
+
+  // ---- table records ----------------------------------------------------------
+
+  async function showTable(name, page) {
+    currentTable = name;
+    setActiveNav(name);
+    document.getElementById("content").innerHTML = '<div class="msg">Loading...</div>';
+
+    let data;
+    try {
+      const r = await fetch(`/db/api/table/${encodeURIComponent(name)}?page=${page}&per_page=20`);
+      if (!r.ok) throw new Error(await r.text());
+      data = await r.json();
+    } catch (e) {
+      document.getElementById("content").innerHTML =
+        `<div class="msg msg-error">Error: ${esc(e.message)}</div>`;
+      return;
+    }
+
+    rowStore = data.rows;
+
+    // header row
+    const ths = data.columns.map(c => `<th>${esc(c)}</th>`).join("");
+
+    // data rows
+    const trs = data.rows.map((row, idx) => {
+      const tds = data.columns.map(c => {
+        const v = row[c];
+        return `<td class="${cellClass(v, c)}">${fmtCell(v, c)}</td>`;
+      }).join("");
+      return `<tr data-idx="${idx}" onclick="toggleDetail(this)">${tds}</tr>`;
+    }).join("");
+
+    const emptyMsg = data.rows.length === 0
+      ? `<tr><td colspan="${data.columns.length}" class="msg">No records in this table.</td></tr>`
+      : "";
+
+    // pagination
+    let pag = "";
+    if (data.total_pages > 1) {
+      pag = `<div class="pagination">
+        ${pgBtn("&laquo; Prev", `showTable('${esc(name)}',${page-1})`, page <= 1)}
+        <span class="pg-info">Page ${page} of ${data.total_pages} &mdash; ${data.total} records total</span>
+        ${pgBtn("Next &raquo;", `showTable('${esc(name)}',${page+1})`, page >= data.total_pages)}
+      </div>`;
+    }
+
+    document.getElementById("content").innerHTML = `
+      <div class="rec-header">
+        <span class="rh-back" onclick="showOverview()">Overview</span>
+        <span class="rh-title">${esc(name)}</span>
+        <span class="rh-count">${data.total} record${data.total !== 1 ? "s" : ""}</span>
+      </div>
+      <div class="rec-wrap">
+        <table class="rec-tbl">
+          <thead><tr>${ths}</tr></thead>
+          <tbody id="rec-body">${trs}${emptyMsg}</tbody>
+        </table>
+      </div>
+      ${pag}`;
+  }
+
+  // ---- row detail expansion ---------------------------------------------------
+
+  function toggleDetail(tr) {
+    // collapse any open detail row first
+    const prev = tr.parentElement.querySelector("tr.detail-row");
+    if (prev) {
+      const prevSource = prev.previousElementSibling;
+      prev.remove();
+      if (prevSource === tr) {
+        tr.classList.remove("is-expanded");
+        return;
+      }
+    }
+
+    tr.classList.add("is-expanded");
+    const idx = parseInt(tr.dataset.idx, 10);
+    const row = rowStore[idx];
+    const colCount = tr.cells.length;
+
+    const detailTr = document.createElement("tr");
+    detailTr.className = "detail-row";
+    const detailTd = document.createElement("td");
+    detailTd.colSpan = colCount;
+    detailTd.innerHTML = buildDetail(row);
+    detailTr.appendChild(detailTd);
+    tr.insertAdjacentElement("afterend", detailTr);
+  }
+
+  function buildDetail(row) {
+    const scalarFields = [];
+    const jsonFields   = [];
+    let responses      = null;
+
+    for (const [k, v] of Object.entries(row)) {
+      if (k === "responses" && Array.isArray(v)) {
+        responses = v;
+      } else if (typeof v === "object" && v !== null) {
+        jsonFields.push([k, v]);
+      } else {
+        scalarFields.push([k, v]);
+      }
+    }
+
+    // scalar fields grid
+    const scalarCells = scalarFields.map(([k, v]) => {
+      const wide = String(v == null ? "" : v).length > 80 ? " df-wide" : "";
+      const valCls = v == null ? " dv-null" : "";
+      return `<div class="df-cell${wide}">
+        <div class="df-key">${esc(k)}</div>
+        <div class="df-val${valCls}">${esc(v == null ? "null" : v)}</div>
+      </div>`;
+    }).join("");
+
+    // JSON fields (non-responses)
+    const jsonCells = jsonFields.map(([k, v]) =>
+      `<div class="df-cell df-wide">
+        <div class="df-key">${esc(k)}</div>
+        <div class="df-val"><pre style="font-size:11px;color:#d2a8ff;overflow-x:auto;">${esc(JSON.stringify(v, null, 2))}</pre></div>
+      </div>`
+    ).join("");
+
+    // LLM responses
+    let responsesSection = "";
+    if (responses !== null) {
+      const count = responses.length;
+      const blocks = responses.length === 0
+        ? '<div style="color:#8b949e;font-size:12px;padding:8px 0;">No responses stored.</div>'
+        : responses.map(buildResponseBlock).join("");
+      responsesSection = `
+        <div class="resp-title">LLM Responses &mdash; ${count} model${count !== 1 ? "s" : ""}</div>
+        ${blocks}`;
+    }
+
+    return `<div class="detail-inner">
+      <div class="detail-fields">${scalarCells}${jsonCells}</div>
+      ${responsesSection}
+    </div>`;
+  }
+
+  function buildResponseBlock(r) {
+    const model   = r.model || "unknown";
+    const latency = r.latency_s != null ? Number(r.latency_s).toFixed(2) + "s" : "";
+    const tokens  = (r.usage && r.usage.total_tokens) ? r.usage.total_tokens + " tokens" : "";
+    const meta    = [latency, tokens].filter(Boolean).join(" | ");
+    const sources = r.sources || [];
+    const bench   = r.benchmark || {};
+
+    let body = "";
+    if (r.error) {
+      body += `<div class="resp-error">Error: ${esc(r.error)}</div>`;
+    } else {
+      body += `<div class="resp-answer">${esc(r.answer || "")}</div>`;
+    }
+
+    if (sources.length) {
+      body += `<div class="section-lbl">Sources</div>
+        <div class="src-tags">
+          ${sources.map(s =>
+            `<span class="src-tag">${esc(s.source)} p.${s.page} (score: ${Number(s.score||0).toFixed(3)})</span>`
+          ).join("")}
+        </div>`;
+    }
+
+    if (bench.bleu != null || bench.rouge != null) {
+      body += `<div class="section-lbl">Benchmark</div>
+        <div class="bench-row">
+          ${bench.bleu  != null ? `<span class="bench-badge">BLEU: ${bench.bleu}</span>`  : ""}
+          ${bench.rouge != null ? `<span class="bench-badge">ROUGE: ${bench.rouge}</span>` : ""}
+        </div>`;
+    }
+
+    return `<div class="resp-block">
+      <div class="resp-head">
+        <span class="resp-model">${esc(model)}</span>
+        <span class="resp-meta">${esc(meta)}</span>
+      </div>
+      <div class="resp-body">${body}</div>
+    </div>`;
+  }
+
+  // ---- expose for onclick attributes ------------------------------------------
+  window.showOverview = showOverview;
+  window.showTable    = showTable;
+  window.toggleDetail = toggleDetail;
+
+  // ---- init -------------------------------------------------------------------
+  async function init() {
+    try {
+      const r = await fetch("/db/api/tables");
+      if (!r.ok) throw new Error(await r.text());
+      const data = await r.json();
+      allTables = data.tables;
+      renderNav();
+      showOverview();
+    } catch (e) {
+      document.getElementById("content").innerHTML =
+        `<div class="msg msg-error">Failed to load tables: ${esc(e.message)}</div>`;
+    }
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>

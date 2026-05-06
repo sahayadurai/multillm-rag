@@ -169,43 +169,55 @@ def extract_images(file_path: str | Path) -> list[dict]:
 
 
 def _extract_pdf_images(pdf_path: Path) -> list[dict]:
-    """Extract images from PDF."""
+    """Extract images from PDF pages and OCR any embedded text."""
     if not PDF_AVAILABLE:
         return []
-    
+
+    try:
+        import pytesseract
+        _has_ocr = True
+    except ImportError:
+        _has_ocr = False
+
     images_meta = []
     try:
         reader = PdfReader(str(pdf_path))
         for page_num, page in enumerate(reader.pages, 1):
             try:
-                resources = page.get("/Resources")
-                if not resources or "/XObject" not in resources:
-                    continue
-                x_objects = resources["/XObject"].get_object()
-                for obj_name in x_objects:
-                    obj = x_objects[obj_name].get_object()
-                    if obj.get("/Subtype") == "/Image":
-                        try:
-                            data = obj.get_data()
-                            w = obj.get("/Width", 0)
-                            h = obj.get("/Height", 0)
-                            img_hash = hashlib.md5(data[:1024]).hexdigest()[:12]
-                            images_meta.append({
-                                "page": page_num,
-                                "width": w,
-                                "height": h,
-                                "hash": img_hash,
-                                "source": pdf_path.name,
-                                "type": "image",
-                                "text": f"[Image on page {page_num}, {w}x{h}]",
-                            })
-                        except Exception:
-                            continue
+                for img_file in page.images:          # pypdf 5.x high-level API
+                    try:
+                        pil_img = img_file.image      # PIL Image object
+                        w, h = pil_img.size
+                        img_hash = hashlib.md5(img_file.data[:1024]).hexdigest()[:12]
+
+                        ocr_text = ""
+                        if _has_ocr:
+                            try:
+                                ocr_text = pytesseract.image_to_string(pil_img).strip()
+                            except Exception:
+                                pass
+
+                        chunk_text = (
+                            f"Image on page {page_num} ({w}x{h}): {ocr_text}"
+                            if ocr_text
+                            else f"[Image on page {page_num}, {w}x{h}]"
+                        )
+                        images_meta.append({
+                            "page": page_num,
+                            "width": w,
+                            "height": h,
+                            "hash": img_hash,
+                            "source": pdf_path.name,
+                            "type": "image",
+                            "text": chunk_text,
+                        })
+                    except Exception:
+                        continue
             except Exception:
                 continue
     except Exception as e:
         print(f"Error extracting images: {e}")
-    
+
     return images_meta
 
 

@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y \
     g++ \
     make \
     libpq-dev \
+    tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
 COPY app/requirements.txt .

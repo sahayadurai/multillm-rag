@@ -6,6 +6,7 @@
   let currentChat = null;
   let selectedFiles = [];
   let currentChatResults = [];
+  let currentUploadedFiles = [];   // filenames from the most recent upload
 
   // ── Safe DOM selector ────────────────────────────────────────────────────
   const $ = (sel) => { try { return document.querySelector(sel); } catch(e) { return null; } };
@@ -87,7 +88,7 @@
     uploadBtn.addEventListener("click", async () => {
       if (!selectedFiles.length) return;
       setButtonDisabled(uploadBtn, true);
-      if (uploadStatus) { uploadStatus.className = "status"; uploadStatus.innerHTML = '<span class="loading"></span> Uploading & indexing …'; }
+      if (uploadStatus) { uploadStatus.className = "status"; uploadStatus.innerHTML = '<span class="loading"></span> Uploading & indexing ...'; }
 
       const fd = new FormData();
       selectedFiles.forEach(f => fd.append("files", f));
@@ -102,6 +103,7 @@
         if (!resp.ok) throw new Error(data.detail || "Upload failed");
         currentSession = data.session_id;
         localStorage.setItem("currentSession", currentSession);
+        currentUploadedFiles = data.results.map(r => r.filename);
         if (uploadStatus) {
           uploadStatus.className = "status success";
           uploadStatus.innerHTML = data.results.map(r =>
@@ -131,7 +133,7 @@
     if (selectedModels.length < 2 || selectedModels.length > 6) { alert("Select between 2 and 6 models"); return; }
 
     setButtonDisabled(queryBtn, true);
-    if (resultsArea) resultsArea.innerHTML = '<div class="card"><span class="loading"></span> Comparing models …</div>';
+    if (resultsArea) resultsArea.innerHTML = '<div class="card"><span class="loading"></span> Comparing models ...</div>';
 
     const fd = new FormData();
     fd.append("query", query);
@@ -140,6 +142,7 @@
     fd.append("top_k", $("#topK")?.value || 5);
     fd.append("cosine_threshold", $("#cosineThreshold")?.value || 0);
     fd.append("temperature", $("#temperature")?.value || 0.3);
+    if (currentUploadedFiles.length) fd.append("file_names", currentUploadedFiles.join(","));
 
     try {
       const resp = await fetch("/api/query", { method: "POST", body: fd });
@@ -349,24 +352,24 @@
         chatHistory.innerHTML = "";
         (sess.chats || []).forEach(c => {
           const li = document.createElement("li");
-          const preview = c.query.substring(0, 35) + (c.query.length > 35 ? "…" : "");
+          const preview = (c.display_name || c.query).substring(0, 35) + ((c.display_name || c.query).length > 35 ? "\u2026" : "");
           const ts = c.timestamp ? new Date(c.timestamp).toLocaleString() : "";
 
           const textSpan = document.createElement("span");
           textSpan.className = "chat-item-text";
           textSpan.textContent = preview;
-          textSpan.title = `${c.query}\n${ts}`;
+          textSpan.title = `${c.display_name ? c.display_name + '\n' : ''}${c.query}\n${ts}`;
           textSpan.addEventListener("click", () => renderResults(c));
 
           const actions = document.createElement("div");
           actions.className = "chat-actions";
 
           const renBtn = document.createElement("button");
-          renBtn.className = "btn-action btn-rename"; renBtn.textContent = "✎"; renBtn.title = "Rename";
-          renBtn.addEventListener("click", (e) => { e.stopPropagation(); renameChat(c.id, c.query); });
+          renBtn.className = "btn-action btn-rename"; renBtn.textContent = "edit"; renBtn.title = "Rename";
+          renBtn.addEventListener("click", (e) => { e.stopPropagation(); renameChat(c.id, c.display_name || c.query); });
 
           const delBtn = document.createElement("button");
-          delBtn.className = "btn-action btn-delete"; delBtn.textContent = "✕"; delBtn.title = "Delete";
+          delBtn.className = "btn-action btn-delete"; delBtn.textContent = "X"; delBtn.title = "Delete";
           delBtn.addEventListener("click", (e) => { e.stopPropagation(); deleteChat(c.id); });
 
           actions.appendChild(renBtn); actions.appendChild(delBtn);
@@ -382,7 +385,7 @@
     newChatBtn.addEventListener("click", () => {
       // Keep the session alive in localStorage so sidebar history is preserved.
       // Just reset the work area: upload state, results, query input.
-      currentChat = null; selectedFiles = []; currentChatResults = [];
+      currentChat = null; selectedFiles = []; currentChatResults = []; currentUploadedFiles = [];
       if (dropZone) dropZone.innerHTML = '<p>Drop files here (PDF, DOCX, TXT, etc.) or <label class="link" id="browseLabel">browse</label></p>';
       // Re-bind browse label after innerHTML reset
       const newBrowse = $("#browseLabel");
@@ -423,8 +426,15 @@
     } catch(e) { alert(`Error: ${e.message}`); }
   }
 
-  function renameChat(chatId, currentQuery) {
-    prompt("Note: editing here is display-only.", currentQuery);
+  function renameChat(chatId, currentLabel) {
+    const newName = prompt("Rename this chat:", currentLabel);
+    if (newName === null) return; // cancelled
+    const fd = new FormData();
+    fd.append("display_name", newName.trim());
+    fetch(`/api/chat/${chatId}/rename`, { method: "PATCH", body: fd })
+      .then(r => r.json())
+      .then(() => refreshSidebar())
+      .catch(() => alert("Rename failed"));
   }
 
   function escHtml(s) { const d = document.createElement("div"); d.textContent = String(s||""); return d.innerHTML; }
